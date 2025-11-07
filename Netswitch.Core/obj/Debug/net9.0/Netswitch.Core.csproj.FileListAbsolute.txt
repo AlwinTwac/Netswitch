@@ -1,0 +1,11 @@
+C:\atwc\Netswitch\Netswitch.Core\bin\Debug\net9.0\Netswitch.Core.deps.json
+C:\atwc\Netswitch\Netswitch.Core\bin\Debug\net9.0\Netswitch.Core.dll
+C:\atwc\Netswitch\Netswitch.Core\bin\Debug\net9.0\Netswitch.Core.pdb
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.AssemblyInfoInputs.cache
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.AssemblyInfo.cs
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.csproj.CoreCompileInputs.cache
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.dll
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\refint\Netswitch.Core.dll
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.pdb
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\ref\Netswitch.Core.dll
