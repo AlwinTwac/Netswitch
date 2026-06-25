@@ -1,9 +1,11 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Netswitch.Core.Abstractions;
+using Netswitch.Core.Models;
 using Netswitch.Core.Options;
 using Netswitch.UI.Common;
 using Netswitch.UI.ViewModels;
@@ -25,6 +27,7 @@ public sealed class DashboardCoordinator : IAsyncDisposable
     private readonly Services.DeviceNotificationService _notificationService;
     private readonly Services.NetworkConditionMonitor _networkConditionMonitor;
     private readonly Services.InternetConnectivityMonitor _internetMonitor;
+    private readonly IServiceProvider _serviceProvider;
     private CancellationTokenSource? _cts;
     private Task[]? _backgroundTasks;
     private DateTimeOffset _lastUsageUpdate = DateTimeOffset.UtcNow;
@@ -39,7 +42,8 @@ public sealed class DashboardCoordinator : IAsyncDisposable
         IDeviceDiscoveryService deviceDiscoveryService,
         IAlertService alertService,
         IProcessNetworkMonitor processNetworkMonitor,
-        MonitoringOptions monitoringOptions)
+        MonitoringOptions monitoringOptions,
+        IServiceProvider serviceProvider)
     {
         _viewModel = viewModel;
         _networkHealthService = networkHealthService;
@@ -50,6 +54,7 @@ public sealed class DashboardCoordinator : IAsyncDisposable
         _alertService = alertService;
         _processNetworkMonitor = processNetworkMonitor;
         _monitoringOptions = monitoringOptions;
+        _serviceProvider = serviceProvider;
         _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
         _notificationService = new Services.DeviceNotificationService();
         _networkConditionMonitor = new Services.NetworkConditionMonitor(_notificationService.Settings);
@@ -81,9 +86,11 @@ public sealed class DashboardCoordinator : IAsyncDisposable
             Task.Run(() => ObserveUsageAsync(token), token),
             Task.Run(() => ObserveDevicesAsync(token), token),
             Task.Run(() => ObserveAlertsAsync(token), token),
+            Task.Run(() => ObserveSecurityAlertsAsync(token), token),
             Task.Run(() => ObserveProcessNetworkAsync(token), token),
             Task.Run(() => UpdateSessionTimerAsync(token), token),
-            Task.Run(() => MonitorInternetConnectivityAsync(token), token)
+            Task.Run(() => MonitorInternetConnectivityAsync(token), token),
+            Task.Run(() => RecordHistorySnapshotsAsync(token), token)
         };
 
         return Task.CompletedTask;
@@ -211,6 +218,66 @@ public sealed class DashboardCoordinator : IAsyncDisposable
         }
     }
 
+    private async Task ObserveSecurityAlertsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var securityService = (ISecurityMonitorService)_serviceProvider.GetService(typeof(ISecurityMonitorService))!;
+            await foreach (var alert in securityService.ObserveSecurityAlertsAsync(cancellationToken).ConfigureAwait(false))
+            {
+                Dispatch(() =>
+                {
+                    // Add to main dashboard alerts
+                    _viewModel.AddAlert(alert);
+                    
+                    // Also add to security dashboard if it's open (or we can just send it via an event, 
+                    // but for now the SecurityDashboardViewModel fetches the same alerts? 
+                    // No, SecurityDashboardViewModel needs these alerts.)
+                    var securityViewModel = (SecurityDashboardViewModel)_serviceProvider.GetService(typeof(SecurityDashboardViewModel))!;
+                    securityViewModel.AddSecurityAlert(alert);
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RecordHistorySnapshotsAsync(CancellationToken cancellationToken)
+    {
+        var historyService = (INetworkHistoryService)_serviceProvider.GetService(typeof(INetworkHistoryService))!;
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
+        
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            try
+            {
+                var latency = _viewModel.CurrentLatencyMs;
+                var sent = _viewModel.TopApplications.Sum(a => a.BytesSent);
+                var rec = _viewModel.TopApplications.Sum(a => a.BytesReceived);
+                var devices = _viewModel.ConnectedDevicesCount;
+                var topApp = _viewModel.TopApplications.OrderByDescending(a => a.BytesSent + a.BytesReceived).FirstOrDefault()?.ApplicationName ?? "None";
+                var alerts = _viewModel.RecentAlerts.Count;
+
+                var snapshot = new NetworkHistorySnapshot(
+                    DateTimeOffset.UtcNow,
+                    latency,
+                    sent,
+                    rec,
+                    devices,
+                    topApp,
+                    alerts
+                );
+                
+                await historyService.RecordSnapshotAsync(snapshot, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"History record error: {ex.Message}");
+            }
+        }
+    }
+
     private async Task RunSpeedTestAsync(object? parameter)
     {
         if (_cts is null)
@@ -219,11 +286,25 @@ public sealed class DashboardCoordinator : IAsyncDisposable
         }
 
         var token = _cts.Token;
-        Dispatch(() => _viewModel.IsSpeedTestRunning = true);
+        Dispatch(() => 
+        {
+            _viewModel.IsSpeedTestRunning = true;
+            _viewModel.SpeedTestPhase = "Initializing";
+            _viewModel.SpeedTestProgressPercent = 0;
+        });
 
         try
         {
-            var result = await _speedTestService.RunSpeedTestAsync(token).ConfigureAwait(false);
+            var progress = new Progress<SpeedTestProgress>(p =>
+            {
+                Dispatch(() =>
+                {
+                    _viewModel.SpeedTestPhase = p.Phase;
+                    _viewModel.SpeedTestProgressPercent = p.ProgressPercent;
+                });
+            });
+
+            var result = await _speedTestService.RunSpeedTestAsync(progress, token).ConfigureAwait(false);
             Dispatch(() => _viewModel.LastSpeedTest = result);
         }
         catch (OperationCanceledException)
@@ -231,7 +312,12 @@ public sealed class DashboardCoordinator : IAsyncDisposable
         }
         finally
         {
-            Dispatch(() => _viewModel.IsSpeedTestRunning = false);
+            Dispatch(() => 
+            {
+                _viewModel.IsSpeedTestRunning = false;
+                _viewModel.SpeedTestPhase = string.Empty;
+                _viewModel.SpeedTestProgressPercent = 0;
+            });
         }
     }
 
@@ -256,14 +342,7 @@ public sealed class DashboardCoordinator : IAsyncDisposable
                     .Take(15) // Show top 15
                     .ToList();
 
-                Dispatch(() =>
-                {
-                    _viewModel.TopApplications.Clear();
-                    foreach (var app in appUsages)
-                    {
-                        _viewModel.TopApplications.Add(app);
-                    }
-                });
+                Dispatch(() => _viewModel.TopApplications.ReplaceAll(appUsages));
             }
         }
         catch (OperationCanceledException)
@@ -310,6 +389,10 @@ public sealed class DashboardCoordinator : IAsyncDisposable
         _viewModel.ToggleNotificationsCommand = new RelayCommand(
             _ => ToggleNotifications(),
             _ => true);
+            
+        _viewModel.OpenSecurityDashboardCommand = new RelayCommand(
+            _ => ShowSecurityDashboard(),
+            _ => true);
     }
 
     private void ShowDeviceList()
@@ -319,6 +402,18 @@ public sealed class DashboardCoordinator : IAsyncDisposable
             var deviceListWindow = new Windows.DeviceListWindow(_viewModel.ConnectedDevices);
             deviceListWindow.Owner = System.Windows.Application.Current.MainWindow;
             deviceListWindow.ShowDialog();
+        });
+    }
+
+    private void ShowSecurityDashboard()
+    {
+        Dispatch(() =>
+        {
+            // Resolve ViewModel from DI provider
+            var securityViewModel = (SecurityDashboardViewModel)_serviceProvider.GetService(typeof(SecurityDashboardViewModel))!;
+            var securityWindow = new Windows.SecurityDashboardWindow(securityViewModel);
+            securityWindow.Owner = System.Windows.Application.Current.MainWindow;
+            securityWindow.ShowDialog();
         });
     }
 
@@ -336,7 +431,7 @@ public sealed class DashboardCoordinator : IAsyncDisposable
             _ = Task.Run(async () =>
             {
                 await Task.Delay(8000);
-                _dispatcher.Invoke(() =>
+                Dispatch(() =>
                 {
                     if (_viewModel.IsRefreshing)
                     {
@@ -414,6 +509,7 @@ public sealed class DashboardCoordinator : IAsyncDisposable
             return;
         }
 
-        _dispatcher.Invoke(action);
+        // Use BeginInvoke to prevent synchronous waiting which can block background threads
+        _dispatcher.BeginInvoke(action, DispatcherPriority.Normal);
     }
 }

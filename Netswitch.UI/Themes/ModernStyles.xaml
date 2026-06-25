@@ -138,7 +138,7 @@
         </Setter>
         <Setter Property="Effect">
             <Setter.Value>
-                <DropShadowEffect BlurRadius="20" ShadowDepth="4" Color="#AA000000" Opacity="0.4" />
+                <DropShadowEffect BlurRadius="12" ShadowDepth="4" Color="#AA000000" Opacity="0.25" />
             </Setter.Value>
         </Setter>
     </Style>
@@ -223,6 +223,29 @@
     <Style x:Key="MetricCard" TargetType="Border" BasedOn="{StaticResource EnhancedCard}">
         <Setter Property="Width" Value="280" />
         <Setter Property="Margin" Value="0,0,20,20" />
+    </Style>
+
+    <!-- Dark Theme ScrollBar -->
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Width" Value="8" />
+        <Setter Property="MinWidth" Value="8" />
+    </Style>
+
+    <Style x:Key="ScrollBarThumb" TargetType="Thumb">
+        <Setter Property="Background" Value="#44CBD5E1" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="4" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#66CBD5E1" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
 </ResourceDictionary>

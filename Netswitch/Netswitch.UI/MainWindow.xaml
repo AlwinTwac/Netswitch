@@ -1,0 +1,455 @@
+<Window x:Class="Netswitch.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:conv="clr-namespace:Netswitch.UI.Converters"
+        xmlns:controls="clr-namespace:Netswitch.UI.Controls"
+        mc:Ignorable="d"
+        Title="Netswitch"
+        Height="700"
+        Width="1100"
+        Background="{DynamicResource NeutralBackgroundBrush}"
+        Foreground="{DynamicResource NeutralForegroundBrush}">
+    <Window.Resources>
+        <conv:LatencyQualityToBrushConverter x:Key="LatencyBrush" />
+        <conv:BooleanToBrushConverter x:Key="BooleanBrush" />
+        <conv:InverseBooleanConverter x:Key="InverseBoolean" />
+        <conv:BytesToReadableConverter x:Key="BytesConverter" />
+        <conv:AlertSeverityToBrushConverter x:Key="AlertSeverityBrush" />
+        <conv:DeviceStatusToBrushConverter x:Key="DeviceStatusBrush" />
+        <conv:DeviceStatusTextConverter x:Key="DeviceStatusText" />
+        <conv:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <conv:DateTimeOffsetToLocalConverter x:Key="DateTimeOffsetToLocalConverter" />
+
+        <Style x:Key="CardHeader" TargetType="TextBlock" BasedOn="{StaticResource CardHeaderText}" />
+        <Style x:Key="Card" TargetType="Border" BasedOn="{StaticResource EnhancedCard}" />
+    </Window.Resources>
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Vertical">
+                <TextBlock FontSize="36"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource NeutralForegroundBrush}">
+                    <Run Text="Net" /><Run Text="switch" Foreground="{DynamicResource PrimaryBrush}" />
+                </TextBlock>
+                <TextBlock Text="Intelligent LAN &amp; WLAN telemetry"
+                           Foreground="{DynamicResource MutedForegroundBrush}"
+                           FontSize="13"
+                           Margin="0,8,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Margin="16,0,0,0">
+                <Border Style="{StaticResource StatusBadge}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="10"
+                                 Height="10"
+                                 VerticalAlignment="Center"
+                                 Fill="{Binding NetworkStatus.IsOnline, Converter={StaticResource BooleanBrush}}">
+                            <Ellipse.Effect>
+                                <DropShadowEffect BlurRadius="8" ShadowDepth="0" 
+                                                Color="{Binding NetworkStatus.IsOnline, Converter={StaticResource BooleanBrush}}" />
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <TextBlock Text="{Binding StatusSummary}"
+                                   Foreground="{DynamicResource NeutralForegroundBrush}"
+                                   FontWeight="SemiBold"
+                                   Margin="8,0,0,0" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource StatusBadge}"
+                        Margin="12,0,0,0">
+                    <TextBlock Text="{Binding NetworkStatusTimestamp}" 
+                               Foreground="{DynamicResource MutedForegroundBrush}"
+                               FontSize="12" />
+                </Border>
+                <Border Margin="12,0,0,0"
+                        Cursor="Hand"
+                        ToolTip="Click to view all devices">
+                    <Border.InputBindings>
+                        <MouseBinding MouseAction="LeftClick" Command="{Binding ShowDeviceListCommand}" />
+                    </Border.InputBindings>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource StatusBadge}">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#334F46E5" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="💻" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Foreground="{DynamicResource NeutralForegroundBrush}" FontWeight="SemiBold">
+                            <Run Text="{Binding ConnectedDevicesCount, Mode=OneWay}" />
+                            <Run Text=" Devices" Foreground="{DynamicResource MutedForegroundBrush}" />
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <WrapPanel Grid.Row="1" ItemWidth="280" MinWidth="280" Margin="0,24,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Orientation="Horizontal">
+            <Border Style="{StaticResource MetricCard}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="🌐" FontSize="22" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <TextBlock Style="{StaticResource CardHeader}" Text="Network Status" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding NetworkStatus.Description}" Margin="0,12,0,0" Foreground="{DynamicResource NeutralForegroundBrush}" FontSize="13" />
+                    
+                    <!-- Network Metrics Grid -->
+                    <Grid Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        
+                        <!-- Network Strength -->
+                        <StackPanel Grid.Row="0" Grid.Column="0">
+                            <TextBlock Text="Strength" FontSize="10" Foreground="{DynamicResource MutedForegroundBrush}" />
+                            <TextBlock Text="{Binding NetworkStrength}" FontSize="14" FontWeight="SemiBold" Margin="0,2,0,0" />
+                        </StackPanel>
+                        
+                        <!-- Average Latency -->
+                        <StackPanel Grid.Row="0" Grid.Column="1">
+                            <TextBlock Text="Avg Latency" FontSize="10" Foreground="{DynamicResource MutedForegroundBrush}" />
+                            <TextBlock Text="{Binding AverageLatencyText}" FontSize="14" FontWeight="SemiBold" Margin="0,2,0,0" />
+                        </StackPanel>
+                        
+                        <!-- Session Time -->
+                        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,12,0,0">
+                            <TextBlock Text="Session Time" FontSize="10" Foreground="{DynamicResource MutedForegroundBrush}" />
+                            <TextBlock Text="{Binding SessionTimeText}" FontSize="14" FontWeight="SemiBold" Margin="0,2,0,0" />
+                        </StackPanel>
+                        
+                        <!-- Status -->
+                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,12,0,0">
+                            <TextBlock Text="Status" FontSize="10" Foreground="{DynamicResource MutedForegroundBrush}" />
+                            <TextBlock Text="{Binding StatusSummary}" FontSize="14" FontWeight="SemiBold" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MetricCard}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="⚡" FontSize="22" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <TextBlock Style="{StaticResource CardHeader}" Text="Router Latency" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding LatencyText}" Margin="0,12,0,0" Foreground="{DynamicResource NeutralForegroundBrush}" FontSize="24" FontWeight="SemiBold" />
+                    <!-- Latency Graph -->
+                    <controls:LatencyGraphControl CurrentLatency="{Binding CurrentLatencyMs}" 
+                                                  Height="80" 
+                                                  Margin="0,16,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MetricCard}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="📊" FontSize="22" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <TextBlock Style="{StaticResource CardHeader}" Text="Live Throughput" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Margin="0,12,0,0">
+                        <TextBlock Text="Total" Foreground="{DynamicResource MutedForegroundBrush}" FontSize="11" />
+                        <TextBlock Text="{Binding TotalRateText}" FontSize="24" FontWeight="Bold" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <StackPanel Margin="0,12,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="↓" Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock Text="{Binding DownloadRateText}" Margin="8,0,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <TextBlock Text="↑" Foreground="{DynamicResource AccentSecondaryBrush}" />
+                            <TextBlock Text="{Binding UploadRateText}" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MetricCard}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="🚀" FontSize="22" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <TextBlock Style="{StaticResource CardHeader}" Text="Speed Test" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Button Content="Run Speed Test"
+                            Style="{StaticResource ModernButton}"
+                            Margin="0,16,0,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding RunSpeedTestCommand}"
+                            IsEnabled="{Binding IsSpeedTestRunning, Converter={StaticResource InverseBoolean}}" />
+                    <!-- Loading Spinner -->
+                    <controls:LoadingSpinner Visibility="{Binding IsSpeedTestRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                            Margin="0,12,0,0"
+                                            HorizontalAlignment="Center" />
+                    <StackPanel Margin="0,18,0,0">
+                        <TextBlock Text="Last Result" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding LastSpeedTestDownloadText}" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding LastSpeedTestUploadText}" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding LastSpeedTestLatencyText}" Margin="0,4,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </WrapPanel>
+
+        <TabControl Grid.Row="2" Margin="0,16,0,0" Style="{StaticResource ModernTabControl}">
+            <TabItem Style="{StaticResource ModernTabItem}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="📡" FontSize="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Interfaces / Apps" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
+                <Border Style="{StaticResource Card}" Padding="20" CornerRadius="18" Margin="0,8,0,0">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardHeader}" Text="Top Interfaces / Apps" />
+                        <ListView ItemsSource="{Binding TopApplications}"
+                                  Margin="0,16,0,0"
+                                  Height="320"
+                                  Style="{StaticResource ModernListView}"
+                                  ItemContainerStyle="{StaticResource ModernListViewItem}">
+                            <ListView.Resources>
+                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource ModernGridViewColumnHeader}" />
+                            </ListView.Resources>
+                            <ListView.View>
+                                <GridView AllowsColumnReorder="False">
+                                    <GridViewColumn Header="Application" Width="250">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding ApplicationName}" 
+                                                          TextTrimming="CharacterEllipsis"
+                                                          ToolTip="{Binding ApplicationName}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Sent" Width="130">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding BytesSent, Converter={StaticResource BytesConverter}}" 
+                                                          TextAlignment="Right"
+                                                          HorizontalAlignment="Right" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Received" Width="130">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding BytesReceived, Converter={StaticResource BytesConverter}}" 
+                                                          TextAlignment="Right"
+                                                          HorizontalAlignment="Right" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Total" Width="130">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding TotalBytes, Converter={StaticResource BytesConverter}}" 
+                                                          TextAlignment="Right"
+                                                          HorizontalAlignment="Right"
+                                                          FontWeight="SemiBold" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+                </Border>
+            </TabItem>
+            
+            <TabItem Style="{StaticResource ModernTabItem}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="💻" FontSize="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Connected Devices" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
+                <Border Style="{StaticResource Card}" Padding="20" CornerRadius="18" Margin="0,8,0,0">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardHeader}" Text="Network Devices" />
+                        <ListView ItemsSource="{Binding ConnectedDevices}"
+                                  Margin="0,16,0,0"
+                                  Height="320"
+                                  Style="{StaticResource ModernListView}"
+                                  ItemContainerStyle="{StaticResource ModernListViewItem}">
+                            <ListView.Resources>
+                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource ModernGridViewColumnHeader}" />
+                            </ListView.Resources>
+                            <ListView.View>
+                                <GridView AllowsColumnReorder="False">
+                                    <GridViewColumn Header="Status" Width="85">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                                                             Fill="{Binding IsOnline, Converter={StaticResource DeviceStatusBrush}}" />
+                                                    <TextBlock Text="{Binding IsOnline, Converter={StaticResource DeviceStatusText}}" 
+                                                               Margin="6,0,0,0" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="IP Address" Width="125">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding IpAddress}" 
+                                                          FontFamily="Consolas" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Hostname" Width="140">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding HostName}" 
+                                                          TextTrimming="CharacterEllipsis"
+                                                          ToolTip="{Binding HostName}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="MAC Address" Width="125">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding MacAddress}" 
+                                                          FontFamily="Consolas"
+                                                          FontSize="11" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Latency" Width="70">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding LatencyMs, StringFormat='{}{0} ms'}" 
+                                                          TextAlignment="Right"
+                                                          HorizontalAlignment="Right" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Last Seen" Width="110">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock TextAlignment="Right"
+                                                          HorizontalAlignment="Right">
+                                                    <TextBlock.Text>
+                                                        <Binding Path="LastSeen" StringFormat="{}{0:g}">
+                                                            <Binding.Converter>
+                                                                <conv:DateTimeOffsetToLocalConverter />
+                                                            </Binding.Converter>
+                                                        </Binding>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+                </Border>
+            </TabItem>
+            
+            <TabItem Style="{StaticResource ModernTabItem}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="🔔" FontSize="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Alerts" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
+                <Border Style="{StaticResource Card}" Padding="20" CornerRadius="18" Margin="0,8,0,0">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardHeader}" Text="Recent Alerts" />
+                        <ListView ItemsSource="{Binding RecentAlerts}"
+                                  Margin="0,16,0,0"
+                                  Height="320"
+                                  Style="{StaticResource ModernListView}"
+                                  ItemContainerStyle="{StaticResource ModernListViewItem}">
+                            <ListView.Resources>
+                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource ModernGridViewColumnHeader}" />
+                            </ListView.Resources>
+                            <ListView.View>
+                                <GridView AllowsColumnReorder="False">
+                                    <GridViewColumn Header="Severity" Width="100">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Border CornerRadius="4" Padding="8,3"
+                                                        Background="{Binding Severity, Converter={StaticResource AlertSeverityBrush}}"
+                                                        HorizontalAlignment="Center">
+                                                    <TextBlock Text="{Binding Severity}" 
+                                                              Foreground="White" 
+                                                              FontWeight="SemiBold"
+                                                              FontSize="11" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Category" Width="110">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Category}" 
+                                                          FontWeight="SemiBold" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Title" Width="180">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Title}" 
+                                                          FontWeight="SemiBold"
+                                                          TextTrimming="CharacterEllipsis"
+                                                          ToolTip="{Binding Title}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Message" Width="260">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Message}" 
+                                                          TextWrapping="NoWrap"
+                                                          TextTrimming="CharacterEllipsis"
+                                                          ToolTip="{Binding Message}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Time" Width="110">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock TextAlignment="Right"
+                                                          HorizontalAlignment="Right">
+                                                    <TextBlock.Text>
+                                                        <Binding Path="CreatedAt" StringFormat="{}{0:g}">
+                                                            <Binding.Converter>
+                                                                <conv:DateTimeOffsetToLocalConverter />
+                                                            </Binding.Converter>
+                                                        </Binding>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+                </Border>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

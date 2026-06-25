@@ -19,6 +19,7 @@ public sealed class DashboardViewModel : ObservableObject
     private RelayCommand _refreshCommand = RelayCommand.NoOp;
     private RelayCommand _toggleSoundCommand = RelayCommand.NoOp;
     private RelayCommand _toggleNotificationsCommand = RelayCommand.NoOp;
+    private RelayCommand _clearAlertsCommand = RelayCommand.NoOp;
     private bool _isSoundEnabled = true;
     private bool _areNotificationsEnabled = true;
     private bool _isRefreshing = false;
@@ -29,8 +30,14 @@ public sealed class DashboardViewModel : ObservableObject
     private int _connectedDevicesCount;
     private double _currentLatencyMs;
     private double _averageLatencyMs;
-    private DateTimeOffset _sessionStartTime = DateTimeOffset.Now;
-    private readonly List<double> _latencyHistory = new();
+    private double _jitterMs;
+    private double _speedTestProgressPercent;
+    private string _speedTestPhase = string.Empty;
+    private int _unreadAlertCount;
+    private DateTimeOffset _sessionStartTime = DateTimeOffset.UtcNow;
+    private readonly Queue<double> _latencyHistory = new();
+    private const int MaxLatencyHistory = 100;
+    private const int MaxAlerts = 100;
 
     public NetworkStatus NetworkStatus
     {
@@ -65,15 +72,21 @@ public sealed class DashboardViewModel : ObservableObject
                 if (value.RoundTripTime != TimeSpan.MaxValue)
                 {
                     var latencyMs = value.RoundTripTime.TotalMilliseconds;
-                    _latencyHistory.Add(latencyMs);
+                    _latencyHistory.Enqueue(latencyMs);
                     
-                    // Keep only last 100 readings
-                    if (_latencyHistory.Count > 100)
+                    // Keep only last N readings (O(1) dequeue)
+                    while (_latencyHistory.Count > MaxLatencyHistory)
                     {
-                        _latencyHistory.RemoveAt(0);
+                        _latencyHistory.Dequeue();
                     }
                     
                     AverageLatencyMs = _latencyHistory.Average();
+                }
+
+                // Update jitter from the snapshot if available
+                if (value.JitterMs > 0)
+                {
+                    JitterMs = value.JitterMs;
                 }
                 
                 OnPropertyChanged(nameof(NetworkStrength));
@@ -95,6 +108,18 @@ public sealed class DashboardViewModel : ObservableObject
             if (SetProperty(ref _averageLatencyMs, value))
             {
                 OnPropertyChanged(nameof(AverageLatencyText));
+            }
+        }
+    }
+
+    public double JitterMs
+    {
+        get => _jitterMs;
+        set
+        {
+            if (SetProperty(ref _jitterMs, value))
+            {
+                OnPropertyChanged(nameof(JitterText));
             }
         }
     }
@@ -132,11 +157,15 @@ public sealed class DashboardViewModel : ObservableObject
         ? $"{AverageLatencyMs:F0} ms avg" 
         : "-- ms avg";
 
+    public string JitterText => JitterMs > 0
+        ? $"±{JitterMs:F1} ms"
+        : "-- ms";
+
     public string SessionTimeText
     {
         get
         {
-            var elapsed = DateTimeOffset.Now - _sessionStartTime;
+            var elapsed = DateTimeOffset.UtcNow - _sessionStartTime;
             
             if (elapsed.TotalHours >= 1)
                 return $"{elapsed.Hours}h {elapsed.Minutes}m";
@@ -147,11 +176,31 @@ public sealed class DashboardViewModel : ObservableObject
         }
     }
 
-    public ObservableCollection<AppUsageSummary> TopApplications { get; } = new();
+    // Speed test progress properties
+    public double SpeedTestProgressPercent
+    {
+        get => _speedTestProgressPercent;
+        set => SetProperty(ref _speedTestProgressPercent, value);
+    }
+
+    public string SpeedTestPhase
+    {
+        get => _speedTestPhase;
+        set => SetProperty(ref _speedTestPhase, value);
+    }
+
+    public int UnreadAlertCount
+    {
+        get => _unreadAlertCount;
+        set => SetProperty(ref _unreadAlertCount, value);
+    }
+
+    // Use BatchObservableCollection for efficient batch updates (single CollectionChanged notification)
+    public BatchObservableCollection<AppUsageSummary> TopApplications { get; } = new();
     
-    public ObservableCollection<NetworkDevice> ConnectedDevices { get; } = new();
+    public BatchObservableCollection<NetworkDevice> ConnectedDevices { get; } = new();
     
-    public ObservableCollection<NetworkAlert> RecentAlerts { get; } = new();
+    public BatchObservableCollection<NetworkAlert> RecentAlerts { get; } = new();
 
     public bool IsSpeedTestRunning
     {
@@ -191,6 +240,13 @@ public sealed class DashboardViewModel : ObservableObject
         set => SetProperty(ref _showDeviceListCommand, value);
     }
 
+    private RelayCommand _openSecurityDashboardCommand = RelayCommand.NoOp;
+    public RelayCommand OpenSecurityDashboardCommand
+    {
+        get => _openSecurityDashboardCommand;
+        set => SetProperty(ref _openSecurityDashboardCommand, value);
+    }
+
     public RelayCommand RefreshCommand
     {
         get => _refreshCommand;
@@ -207,6 +263,12 @@ public sealed class DashboardViewModel : ObservableObject
     {
         get => _toggleNotificationsCommand;
         set => SetProperty(ref _toggleNotificationsCommand, value);
+    }
+
+    public RelayCommand ClearAlertsCommand
+    {
+        get => _clearAlertsCommand;
+        set => SetProperty(ref _clearAlertsCommand, value);
     }
 
     public bool IsSoundEnabled
@@ -311,11 +373,8 @@ public sealed class DashboardViewModel : ObservableObject
             .OrderByDescending(item => item.TotalBytes)
             .ToList();
 
-        TopApplications.Clear();
-        foreach (var item in ordered)
-        {
-            TopApplications.Add(item);
-        }
+        // Use ReplaceAll for a single CollectionChanged notification instead of Clear+Add loop
+        TopApplications.ReplaceAll(ordered);
 
         var seconds = Math.Max(1.0, interval.TotalSeconds);
         var download = ordered.Sum(item => item.BytesReceived) / seconds;
@@ -333,36 +392,43 @@ public sealed class DashboardViewModel : ObservableObject
             .ThenBy(d => d.LastSeen)
             .ToList();
 
-        ConnectedDevices.Clear();
-        foreach (var device in ordered)
-        {
-            ConnectedDevices.Add(device);
-        }
+        // Use ReplaceAll for a single CollectionChanged notification instead of Clear+Add loop
+        ConnectedDevices.ReplaceAll(ordered);
         
         ConnectedDevicesCount = ordered.Count(d => d.IsOnline);
     }
 
     public void AddAlert(NetworkAlert alert)
     {
-        // Keep alerts at max 50 to avoid memory issues
-        if (RecentAlerts.Count >= 50)
+        // Keep alerts at max limit to avoid memory issues
+        while (RecentAlerts.Count >= MaxAlerts)
         {
             RecentAlerts.RemoveAt(RecentAlerts.Count - 1);
         }
 
-        RecentAlerts.Insert(0, alert);
-        
-        // Sort by severity (Critical first) then by time (newest first)
-        var sorted = RecentAlerts
-            .OrderByDescending(a => a.Severity)
-            .ThenByDescending(a => a.CreatedAt)
-            .ToList();
-        
-        RecentAlerts.Clear();
-        foreach (var sortedAlert in sorted)
+        // Insert at correct position to maintain sort order (severity desc, then time desc)
+        // This avoids the expensive Clear+Re-Add pattern that caused UI flicker
+        var insertIndex = 0;
+        for (int i = 0; i < RecentAlerts.Count; i++)
         {
-            RecentAlerts.Add(sortedAlert);
+            var existing = RecentAlerts[i];
+            if (alert.Severity > existing.Severity ||
+                (alert.Severity == existing.Severity && alert.CreatedAt >= existing.CreatedAt))
+            {
+                insertIndex = i;
+                break;
+            }
+            insertIndex = i + 1;
         }
+
+        RecentAlerts.Insert(insertIndex, alert);
+        UnreadAlertCount++;
+    }
+
+    public void ClearAlerts()
+    {
+        RecentAlerts.Clear();
+        UnreadAlertCount = 0;
     }
 
     private static string FormatRate(double bytesPerSecond)

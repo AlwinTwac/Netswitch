@@ -39,4 +39,26 @@
     </LinearGradientBrush>
 
     <DropShadowEffect x:Key="CardShadow" BlurRadius="24" ShadowDepth="0" Color="#99000000" />
+
+    <!-- Surface elevation hierarchy -->
+    <Color x:Key="SurfaceLevel1">#FF141C2B</Color>
+    <Color x:Key="SurfaceLevel2">#FF1E2A3D</Color>
+    <Color x:Key="SurfaceLevel3">#FF263750</Color>
+    <SolidColorBrush x:Key="SurfaceLevel1Brush" Color="{StaticResource SurfaceLevel1}" />
+    <SolidColorBrush x:Key="SurfaceLevel2Brush" Color="{StaticResource SurfaceLevel2}" />
+    <SolidColorBrush x:Key="SurfaceLevel3Brush" Color="{StaticResource SurfaceLevel3}" />
+
+    <!-- Card accent colors per metric type -->
+    <Color x:Key="CardAccentNetwork">#FF06B6D4</Color>
+    <Color x:Key="CardAccentLatency">#FFF59E0B</Color>
+    <Color x:Key="CardAccentThroughput">#FF8B5CF6</Color>
+    <Color x:Key="CardAccentSpeedTest">#FF10B981</Color>
+    <SolidColorBrush x:Key="CardAccentNetworkBrush" Color="{StaticResource CardAccentNetwork}" />
+    <SolidColorBrush x:Key="CardAccentLatencyBrush" Color="{StaticResource CardAccentLatency}" />
+    <SolidColorBrush x:Key="CardAccentThroughputBrush" Color="{StaticResource CardAccentThroughput}" />
+    <SolidColorBrush x:Key="CardAccentSpeedTestBrush" Color="{StaticResource CardAccentSpeedTest}" />
+
+    <!-- Hover/interactive states -->
+    <Color x:Key="CardHoverBackground">#FF243245</Color>
+    <SolidColorBrush x:Key="CardHoverBackgroundBrush" Color="{StaticResource CardHoverBackground}" />
 </ResourceDictionary>

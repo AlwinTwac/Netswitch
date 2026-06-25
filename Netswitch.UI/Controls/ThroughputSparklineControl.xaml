@@ -1,0 +1,7 @@
+<UserControl x:Class="Netswitch.UI.Controls.ThroughputSparklineControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Background="Transparent" CornerRadius="8">
+        <Canvas x:Name="SparkCanvas" ClipToBounds="True" Height="60" />
+    </Border>
+</UserControl>

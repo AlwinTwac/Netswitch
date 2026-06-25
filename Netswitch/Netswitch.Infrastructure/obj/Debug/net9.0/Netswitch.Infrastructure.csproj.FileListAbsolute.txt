@@ -1,0 +1,15 @@
+C:\atwc\Netswitch\Netswitch.Infrastructure\bin\Debug\net9.0\Netswitch.Infrastructure.deps.json
+C:\atwc\Netswitch\Netswitch.Infrastructure\bin\Debug\net9.0\Netswitch.Infrastructure.dll
+C:\atwc\Netswitch\Netswitch.Infrastructure\bin\Debug\net9.0\Netswitch.Infrastructure.pdb
+C:\atwc\Netswitch\Netswitch.Infrastructure\bin\Debug\net9.0\Netswitch.Core.dll
+C:\atwc\Netswitch\Netswitch.Infrastructure\bin\Debug\net9.0\Netswitch.Core.pdb
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.csproj.AssemblyReference.cache
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.AssemblyInfoInputs.cache
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.AssemblyInfo.cs
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.csproj.CoreCompileInputs.cache
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitc.45D55802.Up2Date
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.dll
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\refint\Netswitch.Infrastructure.dll
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.pdb
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\ref\Netswitch.Infrastructure.dll

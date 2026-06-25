@@ -9,3 +9,4 @@ C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.dll
 C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\refint\Netswitch.Core.dll
 C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.pdb
 C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\ref\Netswitch.Core.dll
+C:\atwc\Netswitch\Netswitch.Core\obj\Debug\net9.0\Netswitch.Core.sourcelink.json

@@ -1,6 +1,10 @@
+using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Threading;
+using System.Threading.Tasks;
 using Netswitch.Core.Abstractions;
 using Netswitch.Core.Models;
 using Netswitch.Core.Options;
@@ -18,20 +22,32 @@ public sealed class SpeedTestService : ISpeedTestService
         _options = options ?? new SpeedTestOptions();
     }
 
-    public async Task<SpeedTestResult> RunSpeedTestAsync(CancellationToken cancellationToken = default)
+    public Task<SpeedTestResult> RunSpeedTestAsync(CancellationToken cancellationToken = default)
+    {
+        return RunSpeedTestAsync(null, cancellationToken);
+    }
+
+    public async Task<SpeedTestResult> RunSpeedTestAsync(IProgress<SpeedTestProgress>? progress, CancellationToken cancellationToken = default)
     {
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
         var token = timeoutSource.Token;
 
-        var downloadMbps = await MeasureDownloadAsync(token).ConfigureAwait(false);
-        var uploadMbps = await MeasureUploadAsync(token).ConfigureAwait(false);
+        progress?.Report(new SpeedTestProgress("Measuring Latency", 0, 0));
         var latency = await MeasureLatencyAsync(token).ConfigureAwait(false);
+
+        progress?.Report(new SpeedTestProgress("Starting Download Test", 0, 0));
+        var downloadMbps = await MeasureDownloadAsync(progress, token).ConfigureAwait(false);
+        
+        progress?.Report(new SpeedTestProgress("Starting Upload Test", 0, 0));
+        var uploadMbps = await MeasureUploadAsync(progress, token).ConfigureAwait(false);
+
+        progress?.Report(new SpeedTestProgress("Finished", 100, 0));
 
         return new SpeedTestResult(downloadMbps, uploadMbps, latency, DateTimeOffset.UtcNow);
     }
 
-    private async Task<double> MeasureDownloadAsync(CancellationToken cancellationToken)
+    private async Task<double> MeasureDownloadAsync(IProgress<SpeedTestProgress>? progress, CancellationToken cancellationToken)
     {
         try
         {
@@ -41,30 +57,39 @@ public sealed class SpeedTestService : ISpeedTestService
             response.EnsureSuccessStatusCode();
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var buffer = new byte[81920];
+            var buffer = ArrayPool<byte>.Shared.Rent(81920);
             long totalBytes = 0;
+            long expectedBytes = _options.ExpectedDownloadBytes;
 
-            while (true)
+            try
             {
-                var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
-                if (read == 0)
+                while (true)
                 {
-                    break;
-                }
+                    var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        break;
+                    }
 
-                totalBytes += read;
+                    totalBytes += read;
+
+                    if (progress != null && expectedBytes > 0 && stopwatch.Elapsed.TotalSeconds > 0)
+                    {
+                        var pct = Math.Min(100.0, (double)totalBytes / expectedBytes * 100.0);
+                        var curSpeed = (totalBytes * 8.0) / stopwatch.Elapsed.TotalSeconds / 1_000_000.0;
+                        progress.Report(new SpeedTestProgress("Downloading", pct, curSpeed));
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
             }
 
             stopwatch.Stop();
             if (stopwatch.Elapsed.TotalSeconds <= 0.0)
             {
                 return 0.0;
-            }
-
-            if (_options.ExpectedDownloadBytes > 0 && totalBytes < _options.ExpectedDownloadBytes / 2)
-            {
-                // The endpoint might have responded with less data than expected; treat as partial measurement.
-                totalBytes = Math.Max(totalBytes, _options.ExpectedDownloadBytes);
             }
 
             var bits = totalBytes * 8.0;
@@ -76,31 +101,44 @@ public sealed class SpeedTestService : ISpeedTestService
         }
     }
 
-    private async Task<double> MeasureUploadAsync(CancellationToken cancellationToken)
+    private async Task<double> MeasureUploadAsync(IProgress<SpeedTestProgress>? progress, CancellationToken cancellationToken)
     {
         try
         {
-            var payload = new byte[_options.UploadBytes];
-            Random.Shared.NextBytes(payload);
-
-            var content = new ByteArrayContent(payload);
-            var request = new HttpRequestMessage(HttpMethod.Post, _options.UploadUrl)
+            var payload = ArrayPool<byte>.Shared.Rent(_options.UploadBytes);
+            try
             {
-                Content = content
-            };
+                Random.Shared.NextBytes(payload);
 
-            var stopwatch = Stopwatch.StartNew();
-            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            stopwatch.Stop();
+                var content = new ByteArrayContent(payload, 0, _options.UploadBytes);
+                var request = new HttpRequestMessage(HttpMethod.Post, _options.UploadUrl)
+                {
+                    Content = content
+                };
 
-            if (stopwatch.Elapsed.TotalSeconds <= 0.0)
-            {
-                return 0.0;
+                progress?.Report(new SpeedTestProgress("Uploading", 50, 0)); // Simulated progress for POST since we can't easily stream progress with HttpClient
+
+                var stopwatch = Stopwatch.StartNew();
+                using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                stopwatch.Stop();
+
+                if (stopwatch.Elapsed.TotalSeconds <= 0.0)
+                {
+                    return 0.0;
+                }
+
+                var bits = _options.UploadBytes * 8.0;
+                var speed = bits / stopwatch.Elapsed.TotalSeconds / 1_000_000.0; // Mbps
+                
+                progress?.Report(new SpeedTestProgress("Uploading", 100, speed));
+                
+                return speed;
             }
-
-            var bits = payload.LongLength * 8.0;
-            return bits / stopwatch.Elapsed.TotalSeconds / 1_000_000.0; // Mbps
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(payload);
+            }
         }
         catch
         {
@@ -113,14 +151,25 @@ public sealed class SpeedTestService : ISpeedTestService
         try
         {
             using var ping = new Ping();
-            var reply = await ping.SendPingAsync(_options.LatencyHost, _options.LatencyTimeoutMilliseconds).ConfigureAwait(false);
-            
-            if (reply.Status == IPStatus.Success)
+            long totalRoundtripTime = 0;
+            int successfulPings = 0;
+
+            for (int i = 0; i < 3; i++)
             {
-                return TimeSpan.FromMilliseconds(reply.RoundtripTime);
+                var reply = await ping.SendPingAsync(_options.LatencyHost, _options.LatencyTimeoutMilliseconds).ConfigureAwait(false);
+                
+                if (reply.Status == IPStatus.Success)
+                {
+                    totalRoundtripTime += reply.RoundtripTime;
+                    successfulPings++;
+                }
             }
             
-            // If ping failed, return MaxValue to indicate failure instead of showing wrong timeout value
+            if (successfulPings > 0)
+            {
+                return TimeSpan.FromMilliseconds((double)totalRoundtripTime / successfulPings);
+            }
+            
             return TimeSpan.MaxValue;
         }
         catch
@@ -128,5 +177,4 @@ public sealed class SpeedTestService : ISpeedTestService
             return TimeSpan.MaxValue;
         }
     }
-
 }

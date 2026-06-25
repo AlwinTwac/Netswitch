@@ -17,6 +17,7 @@ public enum AlertSeverity
 {
     Info,
     Warning,
+    High,
     Error,
     Critical
 }
@@ -29,5 +30,6 @@ public enum AlertCategory
     NetworkStatus,
     DeviceActivity,
     Performance,
-    SpeedTest
+    SpeedTest,
+    Security
 }

@@ -165,6 +165,27 @@
                     </StackPanel>
                 </Border>
                 
+                <Border Margin="12,0,0,0"
+                        Cursor="Hand"
+                        ToolTip="Click to open Security Dashboard">
+                    <Border.InputBindings>
+                        <MouseBinding MouseAction="LeftClick" Command="{Binding OpenSecurityDashboardCommand}" />
+                    </Border.InputBindings>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource StatusBadge}">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#33ef4444" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="🛡️" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Security" Foreground="{DynamicResource NeutralForegroundBrush}" FontWeight="SemiBold" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Refresh Button -->
                 <Button Command="{Binding RefreshCommand}"
                         Margin="12,0,0,0"
@@ -382,7 +403,13 @@
                         <TextBlock Text="⚡" FontSize="22" VerticalAlignment="Center" Margin="0,0,10,0" />
                         <TextBlock Style="{StaticResource CardHeader}" Text="Router Latency" VerticalAlignment="Center" />
                     </StackPanel>
-                    <TextBlock Text="{Binding LatencyText}" Margin="0,12,0,0" Foreground="{DynamicResource NeutralForegroundBrush}" FontSize="24" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <TextBlock Text="{Binding LatencyText}" Foreground="{DynamicResource NeutralForegroundBrush}" FontSize="24" FontWeight="SemiBold" />
+                        <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Jitter" FontSize="10" Foreground="{DynamicResource MutedForegroundBrush}" />
+                            <TextBlock Text="{Binding JitterText}" FontSize="13" Foreground="{DynamicResource NeutralForegroundBrush}" FontWeight="SemiBold" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </StackPanel>
                     <!-- Latency Graph -->
                     <controls:LatencyGraphControl CurrentLatency="{Binding CurrentLatencyMs}" 
                                                   Height="80" 
@@ -400,16 +427,17 @@
                         <TextBlock Text="Total" Foreground="{DynamicResource MutedForegroundBrush}" FontSize="11" />
                         <TextBlock Text="{Binding TotalRateText}" FontSize="24" FontWeight="Bold" Margin="0,4,0,0" />
                     </StackPanel>
-                    <StackPanel Margin="0,12,0,0">
+                    <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="↓" Foreground="{DynamicResource AccentBrush}" />
                             <TextBlock Text="{Binding DownloadRateText}" Margin="8,0,0,0" />
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
                             <TextBlock Text="↑" Foreground="{DynamicResource AccentSecondaryBrush}" />
                             <TextBlock Text="{Binding UploadRateText}" Margin="8,0,0,0" />
                         </StackPanel>
                     </StackPanel>
+                    <controls:ThroughputSparklineControl DownloadRate="{Binding DownloadBytesPerSecond}" UploadRate="{Binding UploadBytesPerSecond}" Height="60" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
@@ -425,11 +453,13 @@
                             HorizontalAlignment="Stretch"
                             Command="{Binding RunSpeedTestCommand}"
                             IsEnabled="{Binding IsSpeedTestRunning, Converter={StaticResource InverseBoolean}}" />
-                    <!-- Loading Spinner -->
-                    <controls:LoadingSpinner Visibility="{Binding IsSpeedTestRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                            Margin="0,12,0,0"
-                                            HorizontalAlignment="Center" />
-                    <StackPanel Margin="0,18,0,0">
+                    
+                    <StackPanel Visibility="{Binding IsSpeedTestRunning, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,12,0,0">
+                        <TextBlock Text="{Binding SpeedTestPhase}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" />
+                        <ProgressBar Value="{Binding SpeedTestProgressPercent}" Maximum="100" Height="4" Margin="0,6,0,0" BorderThickness="0" Background="#33475569" Foreground="{DynamicResource AccentBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Margin="0,18,0,0" Visibility="{Binding IsSpeedTestRunning, Converter={StaticResource InverseBoolean}}">
                         <TextBlock Text="Last Result" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding LastSpeedTestDownloadText}" Margin="0,4,0,0" />
                         <TextBlock Text="{Binding LastSpeedTestUploadText}" Margin="0,4,0,0" />

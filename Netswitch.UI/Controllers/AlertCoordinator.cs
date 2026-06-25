@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Netswitch.Core.Abstractions;
 using Netswitch.Core.Models;
 
@@ -16,6 +20,10 @@ public sealed class AlertCoordinator : IAsyncDisposable
     private Task? _monitoringTask;
     private NetworkStatus? _lastNetworkStatus;
     private LatencySnapshot? _lastLatencySnapshot;
+    
+    // Deduplication state
+    private readonly Dictionary<string, DateTimeOffset> _lastAlertTimes = new();
+    private readonly TimeSpan _dedupWindow = TimeSpan.FromSeconds(60);
 
     public AlertCoordinator(
         IAlertService alertService,
@@ -46,6 +54,30 @@ public sealed class AlertCoordinator : IAsyncDisposable
         return Task.CompletedTask;
     }
 
+    private bool ShouldSendAlert(string key)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (_lastAlertTimes.TryGetValue(key, out var lastTime))
+        {
+            if (now - lastTime < _dedupWindow)
+            {
+                return false; // Skip, seen recently
+            }
+        }
+        
+        _lastAlertTimes[key] = now;
+        return true;
+    }
+
+    private async Task TrySendAlertAsync(NetworkAlert alert, CancellationToken cancellationToken)
+    {
+        var key = $"{alert.Category}:{alert.Title}";
+        if (ShouldSendAlert(key))
+        {
+            await _alertService.SendAlertAsync(alert, cancellationToken);
+        }
+    }
+
     private async Task MonitorNetworkStatusAsync(CancellationToken cancellationToken)
     {
         try
@@ -63,7 +95,7 @@ public sealed class AlertCoordinator : IAsyncDisposable
                         Category: AlertCategory.NetworkStatus
                     );
 
-                    await _alertService.SendAlertAsync(alert, cancellationToken);
+                    await TrySendAlertAsync(alert, cancellationToken);
                 }
 
                 _lastNetworkStatus = status;
@@ -72,6 +104,10 @@ public sealed class AlertCoordinator : IAsyncDisposable
         catch (OperationCanceledException)
         {
             // Normal shutdown
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AlertCoordinator] Error in MonitorNetworkStatusAsync: {ex}");
         }
     }
 
@@ -98,7 +134,7 @@ public sealed class AlertCoordinator : IAsyncDisposable
                             Category: AlertCategory.Performance
                         );
 
-                        await _alertService.SendAlertAsync(alert, cancellationToken);
+                        await TrySendAlertAsync(alert, cancellationToken);
                     }
                 }
 
@@ -109,6 +145,10 @@ public sealed class AlertCoordinator : IAsyncDisposable
         {
             // Normal shutdown
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AlertCoordinator] Error in MonitorLatencyAsync: {ex}");
+        }
     }
 
     private async Task MonitorDeviceEventsAsync(CancellationToken cancellationToken)
@@ -117,6 +157,9 @@ public sealed class AlertCoordinator : IAsyncDisposable
         {
             await foreach (var deviceEvent in _deviceDiscoveryService.ObserveDeviceEventsAsync(cancellationToken))
             {
+                // Skip DeviceUpdated for alerts
+                if (deviceEvent.EventType == DeviceEventType.DeviceUpdated) continue;
+
                 var alert = deviceEvent.EventType switch
                 {
                     DeviceEventType.DeviceConnected => new NetworkAlert(
@@ -145,13 +188,22 @@ public sealed class AlertCoordinator : IAsyncDisposable
 
                 if (alert is not null)
                 {
-                    await _alertService.SendAlertAsync(alert, cancellationToken);
+                    // For device events, include the device IP in the key to allow same alert for different devices
+                    var key = $"{alert.Category}:{alert.Title}:{deviceEvent.Device.IpAddress}";
+                    if (ShouldSendAlert(key))
+                    {
+                        await _alertService.SendAlertAsync(alert, cancellationToken);
+                    }
                 }
             }
         }
         catch (OperationCanceledException)
         {
             // Normal shutdown
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AlertCoordinator] Error in MonitorDeviceEventsAsync: {ex}");
         }
     }
 

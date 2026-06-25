@@ -6,4 +6,6 @@ namespace Netswitch.Core.Models;
 public sealed record LatencySnapshot(
     TimeSpan RoundTripTime,
     LatencyQuality Quality,
-    DateTimeOffset CapturedAt);
+    DateTimeOffset CapturedAt,
+    double JitterMs = 0,
+    TimeSpan? SmoothedRoundTripTime = null);

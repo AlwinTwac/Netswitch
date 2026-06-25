@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -13,6 +14,21 @@ namespace Netswitch.Infrastructure.Network;
 public sealed class ProcessNetworkMonitor : IProcessNetworkMonitor
 {
     private readonly Dictionary<int, (long sent, long received, DateTime lastCheck)> _processStats = new();
+    private readonly ConcurrentDictionary<int, string> _processNameCache = new();
+    
+    private static readonly HashSet<string> SystemProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "svchost", "system", "services", "smss", "csrss", "wininit", "winlogon",
+        "lsass", "dwm", "conhost", "sihost", "taskhostw", "explorer",
+        "registry", "idle", "memory compression", "ntoskrnl", "spoolsv",
+        "audiodg", "fontdrvhost", "wudfhost", "dashost", "RuntimeBroker",
+        "SearchIndexer", "SearchProtocolHost", "SearchFilterHost",
+        "wmpnetwk", "mqsvc", "msdtc", "sppsvc", "vssvc", "wmpnscfg",
+        "httpd", "postgres", "postgresql", "mysqld", "sqlservr", "mongod",
+        "nginx", "apache", "apache2", "tomcat", "java", "javaw", "node",
+        "dns", "dhcp", "ftp", "ssh", "telnet", "snmp", "ntp",
+        "msiexec", "trustedinstaller", "tiworker"
+    };
 
     public async Task<IReadOnlyList<ProcessNetworkUsage>> GetProcessNetworkUsageAsync(CancellationToken cancellationToken = default)
     {
@@ -24,19 +40,23 @@ public sealed class ProcessNetworkMonitor : IProcessNetworkMonitor
             var connections = await GetTcpConnectionsAsync(cancellationToken);
             
             // Group by process
-            var processeGroups = connections
+            var processGroups = connections
                 .Where(c => c.ProcessId > 0)
                 .GroupBy(c => c.ProcessId);
 
-            foreach (var group in processeGroups)
+            foreach (var group in processGroups)
             {
                 try
                 {
                     var processId = group.Key;
                     var connectionCount = group.Count();
                     
-                    using var process = Process.GetProcessById(processId);
-                    var processName = process.ProcessName.ToLowerInvariant();
+                    if (!_processNameCache.TryGetValue(processId, out string? processName))
+                    {
+                        using var process = Process.GetProcessById(processId);
+                        processName = process.ProcessName;
+                        _processNameCache[processId] = processName;
+                    }
                     
                     // Filter out system processes and show only user applications
                     if (IsSystemProcess(processName))
@@ -58,15 +78,18 @@ public sealed class ProcessNetworkMonitor : IProcessNetworkMonitor
                         ));
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Process may have terminated
+                    // Process may have terminated or access denied
+                    System.Diagnostics.Debug.WriteLine($"[ProcessNetworkMonitor] Error analyzing process {group.Key}: {ex.Message}");
+                    // Invalidate cache for this PID in case it was reused
+                    _processNameCache.TryRemove(group.Key, out _);
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Error getting connections
+            System.Diagnostics.Debug.WriteLine($"[ProcessNetworkMonitor] Error getting connections: {ex}");
         }
 
         return results
@@ -76,22 +99,7 @@ public sealed class ProcessNetworkMonitor : IProcessNetworkMonitor
 
     private static bool IsSystemProcess(string processName)
     {
-        // Filter out system processes that shouldn't be shown to users
-        var systemProcesses = new[]
-        {
-            "svchost", "system", "services", "smss", "csrss", "wininit", "winlogon",
-            "lsass", "dwm", "conhost", "sihost", "taskhostw", "explorer",
-            "registry", "idle", "memory compression", "ntoskrnl", "spoolsv",
-            "audiodg", "fontdrvhost", "wudfhost", "dashost", "RuntimeBroker",
-            "SearchIndexer", "SearchProtocolHost", "SearchFilterHost",
-            "wmpnetwk", "mqsvc", "msdtc", "sppsvc", "vssvc", "wmpnscfg",
-            "httpd", "postgres", "postgresql", "mysqld", "sqlservr", "mongod",
-            "nginx", "apache", "apache2", "tomcat", "java", "javaw", "node",
-            "dns", "dhcp", "ftp", "ssh", "telnet", "snmp", "ntp",
-            "msiexec", "trustedinstaller", "tiworker"
-        };
-
-        return systemProcesses.Any(sp => processName.Contains(sp));
+        return SystemProcesses.Contains(processName);
     }
 
     private static async Task<List<(int ProcessId, string LocalAddress, string RemoteAddress)>> GetTcpConnectionsAsync(
@@ -101,7 +109,7 @@ public sealed class ProcessNetworkMonitor : IProcessNetworkMonitor
 
         try
         {
-            var netstat = new Process
+            using var netstat = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
@@ -133,9 +141,9 @@ public sealed class ProcessNetworkMonitor : IProcessNetworkMonitor
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Error running netstat
+            System.Diagnostics.Debug.WriteLine($"[ProcessNetworkMonitor] Error running netstat: {ex}");
         }
 
         return connections;

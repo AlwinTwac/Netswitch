@@ -1,18 +1,27 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 
 namespace Netswitch.UI.Controls;
 
 public partial class LatencyGraphControl : UserControl
 {
-    private readonly Queue<double> _latencyHistory = new();
+    private readonly double[] _latencyBuffer = new double[MaxDataPoints];
+    private int _bufferIndex = 0;
+    private int _bufferCount = 0;
     private const int MaxDataPoints = 60;
-    
+
+    // Reusable WPF objects
+    private readonly Path _graphPath;
+    private readonly PathGeometry _pathGeometry;
+    private readonly PathFigure _pathFigure;
+    private readonly LinearGradientBrush _fillBrush;
+    private readonly SolidColorBrush _strokeBrush;
+    private readonly DropShadowEffect _glowEffect;
+
     public static readonly DependencyProperty CurrentLatencyProperty =
         DependencyProperty.Register(nameof(CurrentLatency), typeof(double), typeof(LatencyGraphControl),
             new PropertyMetadata(0.0, OnLatencyChanged));
@@ -26,6 +35,41 @@ public partial class LatencyGraphControl : UserControl
     public LatencyGraphControl()
     {
         InitializeComponent();
+
+        // Pre-create reusable objects
+        _fillBrush = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(0, 1),
+            GradientStops = new GradientStopCollection
+            {
+                new GradientStop(Colors.Transparent, 0),
+                new GradientStop(Colors.Transparent, 1)
+            }
+        };
+
+        _strokeBrush = new SolidColorBrush(Colors.White);
+        _glowEffect = new DropShadowEffect
+        {
+            BlurRadius = 12,
+            ShadowDepth = 0,
+            Opacity = 0.6
+        };
+
+        _pathFigure = new PathFigure { IsClosed = true };
+        _pathGeometry = new PathGeometry();
+        _pathGeometry.Figures.Add(_pathFigure);
+
+        _graphPath = new Path
+        {
+            Data = _pathGeometry,
+            Fill = _fillBrush,
+            Stroke = _strokeBrush,
+            StrokeThickness = 2,
+            Effect = _glowEffect
+        };
+
+        GraphCanvas.Children.Add(_graphPath);
         SizeChanged += OnSizeChanged;
     }
 
@@ -39,13 +83,11 @@ public partial class LatencyGraphControl : UserControl
 
     private void AddLatencyPoint(double latency)
     {
-        _latencyHistory.Enqueue(latency);
-        
-        if (_latencyHistory.Count > MaxDataPoints)
-        {
-            _latencyHistory.Dequeue();
-        }
-        
+        _latencyBuffer[_bufferIndex] = latency;
+        _bufferIndex = (_bufferIndex + 1) % MaxDataPoints;
+        if (_bufferCount < MaxDataPoints)
+            _bufferCount++;
+
         RedrawGraph();
     }
 
@@ -56,80 +98,69 @@ public partial class LatencyGraphControl : UserControl
 
     private void RedrawGraph()
     {
-        GraphCanvas.Children.Clear();
-        
-        if (_latencyHistory.Count < 2 || ActualWidth <= 0 || ActualHeight <= 0)
+        if (_bufferCount < 2 || ActualWidth <= 0 || ActualHeight <= 0)
+        {
+            _graphPath.Visibility = Visibility.Collapsed;
             return;
+        }
 
-        var points = _latencyHistory.ToArray();
-        var maxLatency = Math.Max(100, points.Max()); // At least 100ms scale
+        _graphPath.Visibility = Visibility.Visible;
+
+        // Read from ring buffer in order
+        var startIndex = _bufferCount < MaxDataPoints ? 0 : _bufferIndex;
         var width = ActualWidth;
-        var height = ActualHeight - 10; // Leave space for top/bottom padding
+        var height = ActualHeight - 10;
         var xStep = width / (MaxDataPoints - 1);
 
-        // Create gradient path
-        var pathFigure = new PathFigure { StartPoint = new Point(0, height) };
-        
-        // Build the wave path
-        for (int i = 0; i < points.Length; i++)
+        // Find max for scaling
+        double maxLatency = 100;
+        for (int i = 0; i < _bufferCount; i++)
         {
+            var idx = (startIndex + i) % MaxDataPoints;
+            if (_latencyBuffer[idx] > maxLatency)
+                maxLatency = _latencyBuffer[idx];
+        }
+
+        // Rebuild path segments
+        _pathFigure.StartPoint = new Point(0, height);
+        _pathFigure.Segments.Clear();
+
+        double lastLatency = 0;
+        for (int i = 0; i < _bufferCount; i++)
+        {
+            var idx = (startIndex + i) % MaxDataPoints;
+            var latency = _latencyBuffer[idx];
             var x = i * xStep;
-            var y = height - (points[i] / maxLatency * height);
-            
+            var y = height - (latency / maxLatency * height);
+
             if (i == 0)
             {
-                pathFigure.Segments.Add(new LineSegment(new Point(x, y), true));
+                _pathFigure.Segments.Add(new LineSegment(new Point(x, y), true));
             }
             else
             {
-                // Smooth curve using quadratic bezier
                 var prevX = (i - 1) * xStep;
-                var prevY = height - (points[i - 1] / maxLatency * height);
+                var prevIdx = (startIndex + i - 1) % MaxDataPoints;
+                var prevY = height - (_latencyBuffer[prevIdx] / maxLatency * height);
                 var controlPoint = new Point((prevX + x) / 2, (prevY + y) / 2);
-                pathFigure.Segments.Add(new QuadraticBezierSegment(controlPoint, new Point(x, y), true));
+                _pathFigure.Segments.Add(new QuadraticBezierSegment(controlPoint, new Point(x, y), true));
             }
+
+            lastLatency = latency;
         }
 
-        // Close the path to create filled area
-        pathFigure.Segments.Add(new LineSegment(new Point((points.Length - 1) * xStep, height), true));
-        pathFigure.Segments.Add(new LineSegment(new Point(0, height), true));
+        // Close the path for fill
+        _pathFigure.Segments.Add(new LineSegment(new Point((_bufferCount - 1) * xStep, height), true));
+        _pathFigure.Segments.Add(new LineSegment(new Point(0, height), true));
 
-        var pathGeometry = new PathGeometry();
-        pathGeometry.Figures.Add(pathFigure);
+        // Update colors based on latest latency
+        var fillColor = GetColorForLatency(lastLatency);
+        var strokeColor = GetStrokeColorForLatency(lastLatency);
 
-        // Determine color based on latest latency
-        var latestLatency = points[^1];
-        var fillColor = GetColorForLatency(latestLatency);
-        var strokeColor = GetStrokeColorForLatency(latestLatency);
-
-        // Create filled area
-        var path = new Path
-        {
-            Data = pathGeometry,
-            Fill = new LinearGradientBrush
-            {
-                StartPoint = new Point(0, 0),
-                EndPoint = new Point(0, 1),
-                GradientStops = new GradientStopCollection
-                {
-                    new GradientStop(Color.FromArgb(80, fillColor.R, fillColor.G, fillColor.B), 0),
-                    new GradientStop(Color.FromArgb(20, fillColor.R, fillColor.G, fillColor.B), 1)
-                }
-            },
-            Stroke = new SolidColorBrush(strokeColor),
-            StrokeThickness = 2
-        };
-
-        GraphCanvas.Children.Add(path);
-
-        // Add glow effect
-        path.Effect = new System.Windows.Media.Effects.DropShadowEffect
-        {
-            Color = strokeColor,
-            BlurRadius = 12,
-            ShadowDepth = 0,
-            Opacity = 0.6
-        };
+        _fillBrush.GradientStops[0] = new GradientStop(Color.FromArgb(80, fillColor.R, fillColor.G, fillColor.B), 0);
+        _fillBrush.GradientStops[1] = new GradientStop(Color.FromArgb(20, fillColor.R, fillColor.G, fillColor.B), 1);
+        _strokeBrush.Color = strokeColor;
+        _glowEffect.Color = strokeColor;
     }
 
     private Color GetColorForLatency(double latency)

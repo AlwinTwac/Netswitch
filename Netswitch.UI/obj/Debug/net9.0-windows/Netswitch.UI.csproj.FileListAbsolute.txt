@@ -68,3 +68,8 @@ C:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Windows\DeviceNotificati
 C:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Windows\DeviceNotificationWindow.g.cs
 C:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Windows\NetworkAlertWindow.baml
 C:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Windows\NetworkAlertWindow.g.cs
+C:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Netswitch.UI.sourcelink.json
+c:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Controls\ThroughputSparklineControl.baml
+c:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Controls\ThroughputSparklineControl.g.cs
+c:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Windows\SecurityDashboardWindow.g.cs
+c:\atwc\Netswitch\Netswitch.UI\obj\Debug\net9.0-windows\Windows\SecurityDashboardWindow.baml

@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "Netswitch.Infrastructure/1.0.0": {
+        "dependencies": {
+          "Netswitch.Core": "1.0.0"
+        },
+        "runtime": {
+          "Netswitch.Infrastructure.dll": {}
+        }
+      },
+      "Netswitch.Core/1.0.0": {
+        "runtime": {
+          "Netswitch.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Netswitch.Infrastructure/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Netswitch.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

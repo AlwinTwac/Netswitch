@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.NetworkInformation;
@@ -14,6 +15,8 @@ namespace Netswitch.Infrastructure.Latency;
 public sealed class LatencyMonitor : ILatencyMonitor
 {
     private readonly MonitoringOptions _options;
+    private readonly Queue<double> _latencyBuffer = new();
+    private const int MaxSamples = 5;
 
     public LatencyMonitor(MonitoringOptions? options = null)
     {
@@ -39,13 +42,51 @@ public sealed class LatencyMonitor : ILatencyMonitor
             return new LatencySnapshot(TimeSpan.MaxValue, LatencyQuality.Red, DateTimeOffset.UtcNow);
         }
 
-        using var ping = new Ping();
-        var reply = await ping.SendPingAsync(gatewayAddress, _options.PingTimeoutMilliseconds);
-        var rtt = reply.Status == IPStatus.Success
-            ? TimeSpan.FromMilliseconds(reply.RoundtripTime)
-            : TimeSpan.MaxValue;
+        try
+        {
+            using var ping = new Ping();
+            var reply = await ping.SendPingAsync(gatewayAddress, _options.PingTimeoutMilliseconds);
+            var rtt = reply.Status == IPStatus.Success
+                ? TimeSpan.FromMilliseconds(reply.RoundtripTime)
+                : TimeSpan.MaxValue;
 
-        return new LatencySnapshot(rtt, LatencyClassifier.Classify(rtt), DateTimeOffset.UtcNow);
+            double jitterMs = 0;
+            TimeSpan? smoothedRtt = null;
+
+            if (rtt != TimeSpan.MaxValue)
+            {
+                var currentMs = rtt.TotalMilliseconds;
+                _latencyBuffer.Enqueue(currentMs);
+
+                while (_latencyBuffer.Count > MaxSamples)
+                {
+                    _latencyBuffer.Dequeue();
+                }
+
+                if (_latencyBuffer.Count > 0)
+                {
+                    var avg = _latencyBuffer.Average();
+                    smoothedRtt = TimeSpan.FromMilliseconds(avg);
+
+                    if (_latencyBuffer.Count > 1)
+                    {
+                        var sumOfSquaresOfDifferences = _latencyBuffer.Select(val => (val - avg) * (val - avg)).Sum();
+                        jitterMs = Math.Sqrt(sumOfSquaresOfDifferences / (_latencyBuffer.Count - 1));
+                    }
+                }
+            }
+            else
+            {
+                _latencyBuffer.Clear();
+            }
+
+            return new LatencySnapshot(rtt, LatencyClassifier.Classify(rtt), DateTimeOffset.UtcNow, jitterMs, smoothedRtt);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LatencyMonitor] Error measuring latency: {ex}");
+            return new LatencySnapshot(TimeSpan.MaxValue, LatencyQuality.Red, DateTimeOffset.UtcNow);
+        }
     }
 
     private static string? GetDefaultGateway()

@@ -13,3 +13,4 @@ C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastruc
 C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\refint\Netswitch.Infrastructure.dll
 C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.pdb
 C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\ref\Netswitch.Infrastructure.dll
+C:\atwc\Netswitch\Netswitch.Infrastructure\obj\Debug\net9.0\Netswitch.Infrastructure.sourcelink.json

@@ -24,7 +24,11 @@ public sealed class RelayCommand : ICommand
         _canExecute = canExecute;
     }
 
-    public event EventHandler? CanExecuteChanged;
+    public event EventHandler? CanExecuteChanged
+    {
+        add => CommandManager.RequerySuggested += value;
+        remove => CommandManager.RequerySuggested -= value;
+    }
 
     public bool CanExecute(object? parameter) => _canExecute?.Invoke(parameter) ?? true;
 
@@ -35,15 +39,26 @@ public sealed class RelayCommand : ICommand
             return;
         }
 
-        if (_executeAsync is not null)
+        try
         {
-            await _executeAsync(parameter).ConfigureAwait(false);
+            if (_executeAsync is not null)
+            {
+                await _executeAsync(parameter).ConfigureAwait(false);
+            }
+            else
+            {
+                _execute?.Invoke(parameter);
+            }
         }
-        else
+        catch (OperationCanceledException)
         {
-            _execute?.Invoke(parameter);
+            // Expected during shutdown
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[RelayCommand] Unhandled exception: {ex}");
         }
     }
 
-    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+    public void RaiseCanExecuteChanged() => CommandManager.InvalidateRequerySuggested();
 }

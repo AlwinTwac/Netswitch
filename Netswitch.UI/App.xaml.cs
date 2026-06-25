@@ -121,10 +121,13 @@ public partial class App : Application
         services.AddSingleton<IDeviceDiscoveryService, DeviceDiscoveryService>();
         services.AddSingleton<IAlertService, AlertService>();
         services.AddSingleton<IProcessNetworkMonitor, ProcessNetworkMonitor>();
+        services.AddSingleton<ISecurityMonitorService, Netswitch.Infrastructure.Security.SecurityMonitorService>();
+        services.AddSingleton<INetworkHistoryService, NetworkHistoryService>();
 
         services.AddHttpClient<ISpeedTestService, SpeedTestService>();
 
         services.AddSingleton<DashboardViewModel>();
+        services.AddSingleton<SecurityDashboardViewModel>();
         services.AddSingleton<DashboardCoordinator>();
         services.AddSingleton<AlertCoordinator>();
     }

@@ -18,6 +18,11 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
     private readonly ConcurrentDictionary<string, NetworkDevice> _devices = new();
     private readonly Channel<DeviceEvent> _eventChannel = Channel.CreateUnbounded<DeviceEvent>();
 
+    // Caches
+    private readonly ConcurrentDictionary<string, (string? Mac, DateTimeOffset CachedAt)> _macCache = new();
+    private readonly ConcurrentDictionary<string, (string? Name, DateTimeOffset CachedAt)> _hostnameCache = new();
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+
     public DeviceDiscoveryService(MonitoringOptions? options = null)
     {
         _options = options ?? new MonitoringOptions();
@@ -54,9 +59,16 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
 
     public async Task ScanNetworkAsync(CancellationToken cancellationToken = default)
     {
-        var localIps = GetLocalNetworkAddresses();
+        var localNetworkInfo = GetLocalNetworkAddresses();
+        var now = DateTimeOffset.UtcNow;
         
-        foreach (var baseIp in localIps)
+        // Seed the MAC cache with our local interfaces
+        foreach (var (ip, mac) in localNetworkInfo)
+        {
+            _macCache[ip] = (mac, now);
+        }
+        
+        foreach (var baseIp in localNetworkInfo.Keys)
         {
             await ScanSubnetAsync(baseIp, cancellationToken);
         }
@@ -112,6 +124,9 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
         var ipParts = baseIp.Split('.');
         if (ipParts.Length != 4) return;
 
+        // Batch ARP fetch once per subnet scan
+        RefreshArpTable();
+
         var subnet = $"{ipParts[0]}.{ipParts[1]}.{ipParts[2]}";
         var tasks = new List<Task>();
 
@@ -137,6 +152,71 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
         }
     }
 
+    private void RefreshArpTable()
+    {
+        try
+        {
+            using var arp = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "arp",
+                    Arguments = "-a",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                }
+            };
+
+            arp.Start();
+            var output = arp.StandardOutput.ReadToEnd();
+            arp.WaitForExit();
+
+            var now = DateTimeOffset.UtcNow;
+            var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2)
+                {
+                    var ip = parts[0];
+                    var mac = parts[1];
+                    if (IPAddress.TryParse(ip, out _) && (mac.Contains('-') || mac.Contains(':')))
+                    {
+                        _macCache[ip] = (mac, now);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore ARP failure
+        }
+    }
+
+    private string? GetCachedMacAddress(string ipAddress)
+    {
+        if (_macCache.TryGetValue(ipAddress, out var cached) && (DateTimeOffset.UtcNow - cached.CachedAt) < CacheTtl)
+        {
+            return cached.Mac;
+        }
+        return null; // Don't block for individual lookups, wait for next batch
+    }
+
+    private async Task<string?> GetCachedHostNameAsync(string ipAddress, CancellationToken cancellationToken)
+    {
+        if (_hostnameCache.TryGetValue(ipAddress, out var cached) && (DateTimeOffset.UtcNow - cached.CachedAt) < CacheTtl)
+        {
+            return cached.Name;
+        }
+
+        var hostName = await TryGetDnsNameAsync(ipAddress, cancellationToken)
+                       ?? await TryGetNetBiosNameAsync(ipAddress, cancellationToken);
+
+        _hostnameCache[ipAddress] = (hostName, DateTimeOffset.UtcNow);
+        return hostName;
+    }
+
     private async Task PingDeviceAsync(string ipAddress, CancellationToken cancellationToken)
     {
         try
@@ -159,32 +239,50 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
     private async Task ProcessDeviceResponseAsync(string ipAddress, int latencyMs, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var macAddress = GetMacAddress(ipAddress);
-        var hostName = await GetHostNameAsync(ipAddress, cancellationToken);
+        var macAddress = GetCachedMacAddress(ipAddress);
+        var hostName = await GetCachedHostNameAsync(ipAddress, cancellationToken);
 
-        var isNewDevice = !_devices.ContainsKey(ipAddress);
+        var isNewDevice = !_devices.TryGetValue(ipAddress, out var existingDevice);
 
         var device = new NetworkDevice(
             IpAddress: ipAddress,
-            MacAddress: macAddress,
-            HostName: hostName,
-            FirstSeen: isNewDevice ? now : _devices.GetValueOrDefault(ipAddress)?.FirstSeen ?? now,
+            MacAddress: macAddress ?? existingDevice?.MacAddress,
+            HostName: hostName ?? existingDevice?.HostName,
+            FirstSeen: existingDevice?.FirstSeen ?? now,
             LastSeen: now,
             IsOnline: true,
-            BytesSent: 0, // Will be updated by usage tracking
-            BytesReceived: 0,
+            BytesSent: existingDevice?.BytesSent ?? 0,
+            BytesReceived: existingDevice?.BytesReceived ?? 0,
             LatencyMs: latencyMs
         );
 
         _devices.AddOrUpdate(ipAddress, device, (_, _) => device);
 
-        var eventType = isNewDevice ? DeviceEventType.DeviceConnected : DeviceEventType.DeviceUpdated;
-        var message = isNewDevice
-            ? $"New device connected: {hostName ?? ipAddress}"
-            : $"Device updated: {hostName ?? ipAddress}";
+        bool shouldEmitUpdate = isNewDevice;
+        
+        if (!isNewDevice && existingDevice != null)
+        {
+            // Calculate latency change percentage
+            var existingLatencyMs = existingDevice.LatencyMs ?? 0;
+            var latencyDiff = Math.Abs(latencyMs - existingLatencyMs);
+            var percentChange = existingLatencyMs > 0 ? (double)latencyDiff / existingLatencyMs : 1.0;
+            
+            if (percentChange > 0.20 || !existingDevice.IsOnline)
+            {
+                shouldEmitUpdate = true;
+            }
+        }
 
-        var deviceEvent = new DeviceEvent(eventType, device, now, message);
-        await _eventChannel.Writer.WriteAsync(deviceEvent, cancellationToken);
+        if (shouldEmitUpdate)
+        {
+            var eventType = isNewDevice ? DeviceEventType.DeviceConnected : DeviceEventType.DeviceUpdated;
+            var message = isNewDevice
+                ? $"New device connected: {hostName ?? ipAddress}"
+                : $"Device updated: {hostName ?? ipAddress}";
+
+            var deviceEvent = new DeviceEvent(eventType, device, now, message);
+            await _eventChannel.Writer.WriteAsync(deviceEvent, cancellationToken);
+        }
 
         // Check for high latency
         if (latencyMs > 100 && !isNewDevice)
@@ -313,9 +411,9 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
         return false;
     }
 
-    private static List<string> GetLocalNetworkAddresses()
+    private static Dictionary<string, string> GetLocalNetworkAddresses()
     {
-        var addresses = new List<string>();
+        var addresses = new Dictionary<string, string>();
 
         try
         {
@@ -325,12 +423,16 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
 
             foreach (var nic in interfaces)
             {
+                var macBytes = nic.GetPhysicalAddress().GetAddressBytes();
+                var mac = string.Join("-", macBytes.Select(b => b.ToString("X2")));
                 var ipProps = nic.GetIPProperties();
+                
                 foreach (var addr in ipProps.UnicastAddresses)
                 {
                     if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                     {
-                        addresses.Add(addr.Address.ToString());
+                        var ip = addr.Address.ToString();
+                        addresses[ip] = mac;
                     }
                 }
             }
@@ -341,67 +443,6 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
         }
 
         return addresses;
-    }
-
-    private static string? GetMacAddress(string ipAddress)
-    {
-        try
-        {
-            var arp = new System.Diagnostics.Process
-            {
-                StartInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "arp",
-                    Arguments = $"-a {ipAddress}",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    CreateNoWindow = true
-                }
-            };
-
-            arp.Start();
-            var output = arp.StandardOutput.ReadToEnd();
-            arp.WaitForExit();
-
-            // Parse MAC address from ARP output
-            var lines = output.Split('\n');
-            foreach (var line in lines)
-            {
-                if (line.Contains(ipAddress))
-                {
-                    var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length >= 2)
-                    {
-                        var mac = parts[1];
-                        if (mac.Contains('-') || mac.Contains(':'))
-                        {
-                            return mac;
-                        }
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // MAC address lookup failed
-        }
-
-        return null;
-    }
-
-    private static async Task<string?> GetHostNameAsync(string ipAddress, CancellationToken cancellationToken)
-    {
-        // Try DNS first
-        var dnsName = await TryGetDnsNameAsync(ipAddress, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(dnsName))
-            return dnsName;
-        
-        // Fallback to NetBIOS
-        var netbiosName = await TryGetNetBiosNameAsync(ipAddress, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(netbiosName))
-            return netbiosName;
-        
-        return null;
     }
 
     private static async Task<string?> TryGetDnsNameAsync(string ipAddress, CancellationToken cancellationToken)
@@ -437,7 +478,7 @@ public sealed class DeviceDiscoveryService : IDeviceDiscoveryService
     {
         try
         {
-            var nbtstat = new System.Diagnostics.Process
+            using var nbtstat = new System.Diagnostics.Process
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo
                 {

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Netswitch.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f017d275dc180a96be0a9222b32aaf331e8bb759")]
 [assembly: System.Reflection.AssemblyProductAttribute("Netswitch.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Netswitch.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

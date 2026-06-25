@@ -1,0 +1,93 @@
+<Window x:Class="Netswitch.UI.BubbleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        AllowsTransparency="True"
+        WindowStyle="None"
+        Background="Transparent"
+        Topmost="True"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Width="220"
+        Height="220"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        MouseDoubleClick="Window_MouseDoubleClick">
+    <Border x:Name="Root"
+            CornerRadius="110"
+            Width="200"
+            Height="200"
+            Background="#CC111C44"
+            BorderBrush="#553A4C7E"
+            BorderThickness="1.5"
+            Padding="16"
+            Effect="{StaticResource BubbleShadow}">
+        <Border.RenderTransform>
+            <ScaleTransform x:Name="RootScale" CenterX="0.5" CenterY="0.5" />
+        </Border.RenderTransform>
+        <Grid x:Name="BubbleGrid">
+            <Grid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Opacity">
+                        <MenuItem Header="30%" Tag="0.3" Click="OpacityMenuItem_Click" />
+                        <MenuItem Header="60%" Tag="0.6" Click="OpacityMenuItem_Click" />
+                        <MenuItem Header="90%" Tag="0.9" Click="OpacityMenuItem_Click" />
+                        <Separator />
+                        <MenuItem Header="100%" Tag="1" Click="OpacityMenuItem_Click" />
+                    </MenuItem>
+                    <MenuItem Header="Size">
+                        <MenuItem Header="Compact" Tag="0.85" Click="ScaleMenuItem_Click" />
+                        <MenuItem Header="Comfort" Tag="1" Click="ScaleMenuItem_Click" />
+                        <MenuItem Header="Expanded" Tag="1.2" Click="ScaleMenuItem_Click" />
+                    </MenuItem>
+                </ContextMenu>
+            </Grid.ContextMenu>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <Ellipse Width="18" Height="18" Fill="{Binding NetworkStatus.IsOnline, Converter={StaticResource BooleanBrush}}" />
+                <TextBlock Text="{Binding StatusSummary}"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource NeutralForegroundBrush}"
+                           Margin="10,0,0,0" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="{Binding TotalRateText}"
+                           FontSize="22"
+                           FontWeight="Bold"
+                           HorizontalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="↓" Foreground="{DynamicResource AccentBrush}" />
+                        <TextBlock Text="{Binding DownloadRateText}" Margin="4,0,0,0" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
+                        <TextBlock Text="↑" Foreground="{DynamicResource AccentSecondaryBrush}" />
+                        <TextBlock Text="{Binding UploadRateText}" Margin="4,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock Text="{Binding LatencyText}"
+                           FontSize="14"
+                           Foreground="{DynamicResource MutedForegroundBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,6,0,0" />
+            </StackPanel>
+
+            <Button Grid.Row="2"
+                    Content="⋮"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Padding="8,2"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    Foreground="{DynamicResource MutedForegroundBrush}"
+                    Click="SettingsButton_Click" />
+        </Grid>
+    </Border>
+</Window>
